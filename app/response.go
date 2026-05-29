@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"net"
 	"strconv"
 )
 
@@ -13,9 +14,17 @@ type StatusLine struct {
 type HttpResponse struct {
 	StatusLine StatusLine
 	Headers    map[string]string
+	Conn       net.Conn
 }
 
-func (r *HttpResponse) toBytes() []byte {
+func NewHttpResponse(conn net.Conn) HttpResponse {
+	return HttpResponse{
+		Conn:    conn,
+		Headers: make(map[string]string, 256),
+	}
+}
+
+func (r *HttpResponse) Write(b []byte) (int, error) {
 	s := bytes.Buffer{}
 	s.WriteString(r.StatusLine.version + " ")
 	s.WriteString(strconv.Itoa(r.StatusLine.status) + " ")
@@ -26,7 +35,9 @@ func (r *HttpResponse) toBytes() []byte {
 		s.WriteString(k + ":" + v)
 		s.WriteString("\r\n")
 	}
-	return s.Bytes()
+	s.WriteString("\r\n")
+	s.Write(b)
+	return r.Conn.Write(s.Bytes())
 }
 
 func (r *HttpResponse) SetHeader(key, value string) {
