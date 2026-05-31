@@ -8,28 +8,23 @@ import (
 	"strings"
 )
 
-type handleFunc func(*HttpRequest, *HttpResponse)
 type HttpServer struct {
-	listener  net.Listener
-	endpoints map[string]handleFunc
-	log       *log.Logger
+	listener net.Listener
+	Router   HttpRouter
+	log      *log.Logger
 }
 
-func NewHttpServer(addr string, port string, log *log.Logger) (*HttpServer, error) {
+func NewHttpServer(addr string, port string, router HttpRouter, log *log.Logger) (*HttpServer, error) {
 	listener, err := net.Listen("tcp",
 		strings.Join([]string{addr, ":", port}, ""))
 	if err != nil {
 		return nil, err
 	}
 	return &HttpServer{
-		listener:  listener,
-		endpoints: make(map[string]handleFunc, 64),
-		log:       log,
+		listener: listener,
+		Router:   router,
+		log:      log,
 	}, nil
-}
-
-func (s *HttpServer) setEndpoint(path string, handler handleFunc) {
-	s.endpoints[path] = handler
 }
 
 func (s *HttpServer) ListenAndServe() {
@@ -38,15 +33,13 @@ func (s *HttpServer) ListenAndServe() {
 		if err != nil {
 			s.log.Fatalf("Could not accept new client request: %v", err)
 		}
-
-		go s.Handler(conn)
+		go s.HandleConn(conn)
 	}
 }
 
-func (s *HttpServer) Handler(conn net.Conn) {
+func (s *HttpServer) HandleConn(conn net.Conn) {
 	buf := make([]byte, 1024)
 	defer conn.Close()
-
 	_, err := conn.Read(buf)
 	if err != nil {
 		s.log.Printf("Could not read into the buffer: %v", err)
@@ -65,16 +58,7 @@ func (s *HttpServer) Handler(conn net.Conn) {
 		}
 		return
 	}
-
-	go func() {
-		s.log.Println("Got request for path: ", request.Statusline.path)
-		handler, exists := s.endpoints[request.Statusline.path]
-		if !exists {
-			response.SetStatus(HttpForbidden)
-			response.Write([]byte(`{"error": "Not found"}`))
-			return
-		}
-		s.log.Println("Running the handler now...")
-		handler(&request, &response)
-	}()
+	s.log.Printf("Path request by the client %v", request.StartLine.path)
+	// We dispatch the request & response to the router
+	s.Router.Dispatch(&request, &response)
 }

@@ -2,8 +2,8 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"net"
-	"strconv"
 )
 
 type StatusLine struct {
@@ -24,20 +24,15 @@ func NewHttpResponse(conn net.Conn) HttpResponse {
 	}
 }
 
-func (r *HttpResponse) Write(b []byte) (int, error) {
-	s := bytes.Buffer{}
-	s.WriteString(r.StatusLine.version + " ")
-	s.WriteString(strconv.Itoa(r.StatusLine.status) + " ")
-	s.WriteString(r.StatusLine.reason)
-	s.WriteString("\r\n\r\n")
-
+func (r *HttpResponse) Write(body []byte) (int, error) {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "HTTP/1.1 %v %s\r\n\r\n", r.StatusLine.status, r.StatusLine.reason)
 	for k, v := range r.Headers {
-		s.WriteString(k + ":" + v)
-		s.WriteString("\r\n")
+		fmt.Fprintf(&buf, "%v:%v\r\n", k, v)
 	}
-	s.WriteString("\r\n")
-	s.Write(b)
-	return r.Conn.Write(s.Bytes())
+	fmt.Fprintf(&buf, "\r\n\r\n")
+	buf.Write(body)
+	return r.Conn.Write(buf.Bytes())
 }
 
 func (r *HttpResponse) SetHeader(key, value string) {

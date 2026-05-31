@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"net"
-	"os"
 	"path"
 	"regexp"
 	"strings"
@@ -16,9 +15,10 @@ type RequestStartLine struct {
 }
 
 type HttpRequest struct {
-	Statusline RequestStartLine
-	Headers    map[string]string
-	Body       []byte
+	StartLine RequestStartLine
+	Headers   map[string]string
+	Body      []byte
+	Params    map[string]string
 }
 
 var methodRe, _ = regexp.Compile(`POST|GET|OPTIONS|DELETE|PUT|UPDATE|PATCH`)
@@ -32,15 +32,6 @@ var pathRe, _ = regexp.Compile(`(\*|https?:\/\/[^\s]+|\/[^\s]*|[A-Za-z0-9.-]+:\d
 var versionRe, _ = regexp.Compile(`HTTP\/\d.\d`)
 
 var placeholderRE = regexp.MustCompile(`\{([^{}]+)\}`)
-
-func (r HttpRequest) ExtractPlaceHolder() []string {
-	matches := placeholderRE.FindAllStringSubmatch(r.Statusline.path, -1)
-	names := make([]string, 0, len(matches))
-	for _, m := range matches {
-		names = append(names, m[1])
-	}
-	return names
-}
 
 func ParseHttpRequest(data []byte) (HttpRequest, error) {
 	idx := bytes.Index(data, []byte("\r\n"))
@@ -87,15 +78,6 @@ func ParseHttpRequest(data []byte) (HttpRequest, error) {
 		)
 	}
 
-	// if method == "GET" {
-	// 	if !ValidatePath(urlPath) {
-	// 		return HttpRequest{}, NewHttpError(
-	// 			ErrInvalidPath,
-	// 			"invalid path.",
-	// 		)
-	// 	}
-	// }
-
 	if method == "CONNECT" {
 		_, _, err := net.SplitHostPort(urlPath)
 		if err != nil {
@@ -112,7 +94,6 @@ func ParseHttpRequest(data []byte) (HttpRequest, error) {
 		version: version,
 	}
 	data = data[idx+2:]
-
 	headers := make(map[string]string, 1024)
 	for {
 		line, rest, ok := bytes.Cut(data, []byte("\r\n\r\n"))
@@ -123,7 +104,7 @@ func ParseHttpRequest(data []byte) (HttpRequest, error) {
 		if len(header) != 2 {
 			return HttpRequest{}, NewHttpError(
 				ErrMalformedRequest,
-				"invalid request header",
+				"invalid request header.",
 			)
 		}
 		key, value := header[0], header[1]
@@ -138,9 +119,9 @@ func ParseHttpRequest(data []byte) (HttpRequest, error) {
 	}
 
 	httpRequest := HttpRequest{
-		Statusline: requestStartLine,
-		Headers:    headers,
-		Body:       data,
+		StartLine: requestStartLine,
+		Headers:   headers,
+		Body:      data,
 	}
 
 	return httpRequest, nil
@@ -153,7 +134,6 @@ func validateHeaderKey(key string) bool {
 			('0' <= c && c <= '9') {
 			continue
 		}
-
 		switch c {
 		case '!', '$', '-', '_', '%', '*',
 			'+', '^', '`', '|', '~', '#', '&', '\'':
@@ -161,14 +141,6 @@ func validateHeaderKey(key string) bool {
 		default:
 			return false
 		}
-	}
-	return true
-}
-
-func ValidatePath(urlPath string) bool {
-	_, err := os.Stat(urlPath)
-	if err != nil {
-		return false
 	}
 	return true
 }
